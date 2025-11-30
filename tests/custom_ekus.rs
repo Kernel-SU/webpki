@@ -1,9 +1,13 @@
 #![cfg(all(feature = "alloc", any(feature = "ring", feature = "aws-lc-rs")))]
 
 use core::time::Duration;
+use std::error::Error as StdError;
 
 use pki_types::{CertificateDer, UnixTime};
+use rcgen::ExtendedKeyUsagePurpose;
 use webpki::{ExtendedKeyUsage, RequiredEkuNotFoundContext, anchor_from_trusted_cert};
+
+mod common;
 
 fn check_cert(
     ee: &[u8],
@@ -31,6 +35,16 @@ fn check_cert(
         .map(|_| ()),
         result
     );
+}
+
+fn code_signing_cert() -> Result<(rcgen::Certificate, CertificateDer<'static>), Box<dyn StdError>> {
+    let issuer = common::make_issuer("Code Signing CA")?;
+    let end_entity = common::make_end_entity(
+        vec![ExtendedKeyUsagePurpose::CodeSigning],
+        "Code Signing EE",
+        &issuer,
+    )?;
+    Ok((end_entity.cert, issuer.as_ref().der().clone()))
 }
 
 #[test]
@@ -96,4 +110,65 @@ pub fn verify_custom_eku_required_if_present() {
     let ee = include_bytes!("custom_ekus/cert_with_both_ekus_accepted_for_client_auth.ee.der");
     let ca = include_bytes!("custom_ekus/cert_with_both_ekus_accepted_for_client_auth.ca.der");
     check_cert(ee, ca, &eku, time, Ok(()));
+}
+
+#[test]
+pub fn verify_code_signing_eku() {
+    // Verify CODE_SIGNING_REPR constant is correct
+    assert_eq!(
+        ExtendedKeyUsage::CODE_SIGNING_REPR,
+        &[1, 3, 6, 1, 5, 5, 7, 3, 3]
+    );
+
+    let time = UnixTime::since_unix_epoch(Duration::from_secs(0x1fed_f00d));
+    let eku = ExtendedKeyUsage::code_signing();
+
+    // Certificate that explicitly carries the codeSigning EKU is accepted
+    let (code_signing_ee, code_signing_ca) = code_signing_cert().unwrap();
+    check_cert(
+        code_signing_ee.der(),
+        code_signing_ca.as_ref(),
+        &eku,
+        time,
+        Ok(()),
+    );
+
+    // Verify code_signing() method returns correct OID values
+    let oid_values: Vec<usize> = eku.oid_values().collect();
+    assert_eq!(oid_values, vec![1, 3, 6, 1, 5, 5, 7, 3, 3]);
+
+    // Verify that a certificate without EKU is rejected for code signing
+    let ee = include_bytes!("custom_ekus/cert_with_no_eku_accepted_for_client_auth.ee.der");
+    let ca = include_bytes!("custom_ekus/cert_with_no_eku_accepted_for_client_auth.ca.der");
+    check_cert(
+        ee,
+        ca,
+        &eku,
+        time,
+        Err(webpki::Error::RequiredEkuNotFound(
+            RequiredEkuNotFoundContext {
+                required: eku,
+                present: vec![],
+            },
+        )),
+    );
+
+    // Verify that a certificate with server/client EKU is rejected for code signing
+    let ee = include_bytes!("custom_ekus/cert_with_both_ekus_accepted_for_client_auth.ee.der");
+    let ca = include_bytes!("custom_ekus/cert_with_both_ekus_accepted_for_client_auth.ca.der");
+    check_cert(
+        ee,
+        ca,
+        &eku,
+        time,
+        Err(webpki::Error::RequiredEkuNotFound(
+            RequiredEkuNotFoundContext {
+                required: eku,
+                present: vec![
+                    vec![1, 3, 6, 1, 5, 5, 7, 3, 2], // clientAuth
+                    vec![1, 3, 6, 1, 5, 5, 7, 3, 1], // serverAuth
+                ],
+            },
+        )),
+    );
 }

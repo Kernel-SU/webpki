@@ -523,6 +523,14 @@ impl ExtendedKeyUsage {
         Self::required_if_present(EKU_CLIENT_AUTH)
     }
 
+    /// Construct a new [`ExtendedKeyUsage`] as appropriate for code signing.
+    ///
+    /// This requires the certificate to explicitly contain the Code Signing EKU as specified in
+    /// <https://www.rfc-editor.org/rfc/rfc5280#section-4.2.1.12>.
+    pub const fn code_signing() -> Self {
+        Self::required(EKU_CODE_SIGNING)
+    }
+
     /// Construct a new [`ExtendedKeyUsage`] requiring a certificate to support the specified OID.
     pub const fn required(oid: &'static [u8]) -> Self {
         Self {
@@ -553,6 +561,8 @@ impl ExtendedKeyUsage {
     pub const SERVER_AUTH_REPR: &[usize] = &[1, 3, 6, 1, 5, 5, 7, 3, 1];
     /// Human-readable representation of the client authentication OID.
     pub const CLIENT_AUTH_REPR: &[usize] = &[1, 3, 6, 1, 5, 5, 7, 3, 2];
+    /// Human-readable representation of the code signing OID.
+    pub const CODE_SIGNING_REPR: &[usize] = &[1, 3, 6, 1, 5, 5, 7, 3, 3];
 }
 
 impl ExtendedKeyUsageValidator for ExtendedKeyUsage {
@@ -691,6 +701,9 @@ const EKU_SERVER_AUTH: &[u8] = &oid!(1, 3, 6, 1, 5, 5, 7, 3, 1);
 
 // id-kp-clientAuth   OBJECT IDENTIFIER ::= { id-kp 2 }
 const EKU_CLIENT_AUTH: &[u8] = &oid!(1, 3, 6, 1, 5, 5, 7, 3, 2);
+
+// id-kp-codeSigning  OBJECT IDENTIFIER ::= { id-kp 3 }
+const EKU_CODE_SIGNING: &[u8] = &oid!(1, 3, 6, 1, 5, 5, 7, 3, 3);
 
 pub(crate) struct OidDecoder<'a> {
     encoded: &'a [u8],
